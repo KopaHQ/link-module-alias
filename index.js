@@ -6,12 +6,6 @@ const path = require('path');
 
 const packageJson = require('./package.json');
 
-const moduleAliases = packageJson._moduleAliases;
-if(!moduleAliases) {
-  console.error(`_moduleAliases in package.json is empty, skipping`);
-  process.exit(0);
-}
-
 const { promisify } = require('util');
 
 const stat = promisify(fs.stat);
@@ -28,6 +22,15 @@ const chalk = require('chalk');
 const LINK_ALIAS_PREFIX = '.link-module-alias-';
 const LINK_ALIAS_NESTED_SEPARATOR = '--';
 const DIR_LINK_TYPE = ((process.platform === 'win32') ? 'junction' : 'dir');
+
+function getModuleAliases(packageJsonKey = '_moduleAliases') {
+  const moduleAliases = packageJson[packageJsonKey];
+  if(!moduleAliases) {
+    console.error(`${packageJsonKey} in package.json is empty, skipping`);
+    process.exit(0);
+  }
+  return moduleAliases;
+}
 
 async function tryUnlink(path) {
   try {
@@ -114,7 +117,7 @@ async function unlinkModule(moduleName) {
   return { moduleName, type };
 }
 
-async function linkModule(moduleName) {
+async function linkModule(moduleAliases, moduleName) {
   const moduleDir = path.join('node_modules', moduleName);
   const moduleExists = await exists(moduleDir);
   const linkExists = moduleExists && await exists(path.join('node_modules', getModuleAlias(moduleName)));
@@ -181,10 +184,11 @@ async function linkModule(moduleName) {
   return { moduleName, type, target };
 }
 
-async function linkModules() {
-  try { await mkdir('node_modules'); } catch(err) {}
+async function linkModules(packageJsonKey) {
+  try { await mkdir('node_modules'); } catch(err) {};
+  const moduleAliases = getModuleAliases(packageJsonKey);
   const modules = await Promise.all(Object.keys(moduleAliases).map(async key => {
-    return linkModule(key);
+    return linkModule(moduleAliases, key);
   }));
   console.log('link-module-alias:', modules.map(addColor).join(', '));
 }
@@ -213,5 +217,9 @@ async function unlinkModules() {
 if(process.argv[2] === 'clean') {
   unlinkModules();
 } else {
-  linkModules();
+  let packageJsonKey;
+  if (process.argv.includes('-c')) {
+    packageJsonKey = process.argv[process.argv.indexOf('-c') + 1];
+  }
+  linkModules(packageJsonKey);
 }
